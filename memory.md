@@ -128,6 +128,42 @@
 
 ---
 
+### 📅 Entry 7: 2026-11-17 00:35 IST — Phase 2 Fully Implemented, Tested & Verified
+* **Phase:** Phase 2 (Core Hardware & Interrupt Subsystem)
+* **Components Built:**
+  1. `src/arch/x86_64/gdt.rs`: 64-bit Global Descriptor Table with Kernel Code/Data, User Code/Data segments, 16-byte TSS descriptor loaded via `ltr`, and dedicated 4 KiB IST1 stack for double-fault (`#DF`) isolation.
+  2. `src/arch/x86_64/idt.rs`: 256-entry Interrupt Descriptor Table loaded via `lidt`. Assembly ISR stubs for all 32 x86 CPU exceptions with uniform stack frame reconstruction and formatted crash dump formatting. Non-fatal `#BP` (`int3`) handler. PS/2 keyboard IRQ (vector `0x21`) handler with Scancode Set 1 decoding.
+  3. `src/arch/x86_64/apic.rs`: Legacy 8259 PIC remapped (0x20–0x2F) and masked (leaving keyboard IRQ1 unmasked). CPUID detection and enablement of MSR-based `x2APIC` mode (eliminating unmapped MMIO page faults). APIC periodic timer calibrated via PIT channel 2 running at ~100 Hz (10 ms ticks).
+  4. `src/main.rs`: Boot sequence integration with global HHDM tracking, hardware interrupt enablement (`sti`), and live `#BP` self-test.
+* **Test Command:** `make run` (QEMU with `-cpu max`)
+* **Verified Runtime Output:**
+  ```text
+  [ZenoOS] GDT loaded (7 entries, TSS installed, IST1 ready).
+  [ZenoOS] IDT loaded (256 entries, all 32 CPU exceptions covered).
+  [ZenoOS] Legacy 8259 PIC remapped (0x20–0x2F) and masked.
+  [ZenoOS] x2APIC enabled (MSR-based, no MMIO).
+  [ZenoOS] Local APIC enabled.
+  [ZenoOS] APIC timer calibrated: 627500 ticks / 10 ms.
+  [ZenoOS] APIC timer armed: ~100 Hz, vector 0x20.
+  [ZenoOS] Hardware interrupts ENABLED.  Phase 2 active.
+  [+] Phase 2: GDT/IDT/APIC active.  Interrupts ENABLED.
+  [ZenoOS] #BP Breakpoint @ RIP=0xffffffff80002fef — continuing.
+  [#BP] Breakpoint @ 0xffffffff80002fef — continuing.
+  [+] #BP test passed — IDT is live.
+  [ZenoOS] #BP self-test passed.
+  [TICK] 1000 ms elapsed (100 ticks)
+  [TICK] 2000 ms elapsed (200 ticks)
+  [TICK] 3000 ms elapsed (300 ticks)
+  [TICK] 4000 ms elapsed (400 ticks)
+  ```
+* **Git Operations:**
+  - Dedicated branch `phase-2` created.
+  - 4 atomic commits created and pushed to GitHub remote `origin/phase-2`.
+  - Merged cleanly into `main` via fast-forward and pushed to `origin/main`.
+* **Phase 2 Status:** **100% COMPLETE & VERIFIED.**
+
+---
+
 ## 3. Phase-Wise Progress Tracker
 
 - [x] **Phase 0: Pre-study & Architectural Pivot** *(Completed: 2026-11-04)*
@@ -144,15 +180,15 @@
   - [x] Create automated build script (`Makefile`) producing a hybrid UEFI/BIOS ISO.
   - [x] Verified full boot in QEMU: 1280x800 @ 32bpp framebuffer, HHDM mapping, and memory map enumeration.
 
-- [ ] **Phase 2: Core Hardware & Interrupt Subsystem** *(UP NEXT)*
-  - [ ] Global Descriptor Table (GDT) & Task State Segment (TSS) for double fault stack isolation.
-  - [ ] Interrupt Descriptor Table (IDT) for all 32 x86 CPU exceptions.
-  - [ ] Exception handlers with formatted crash dumps (Divide by Zero, Page Fault, GPF).
-  - [ ] Disable legacy 8259 PIC; map and initialize Local APIC.
-  - [ ] APIC Timer calibration for periodic system ticks.
-  - [ ] PS/2 Keyboard interrupt driver for interactive console typing.
+- [x] **Phase 2: Core Hardware & Interrupt Subsystem** *(Completed: 2026-11-17)*
+  - [x] Global Descriptor Table (GDT) & Task State Segment (TSS) for double fault stack isolation.
+  - [x] Interrupt Descriptor Table (IDT) for all 32 x86 CPU exceptions.
+  - [x] Exception handlers with formatted crash dumps (Divide by Zero, Page Fault, GPF).
+  - [x] Disable legacy 8259 PIC; map and initialize Local APIC (x2APIC mode).
+  - [x] APIC Timer calibration for periodic system ticks (~100 Hz).
+  - [x] PS/2 Keyboard interrupt driver for interactive console typing.
 
-- [ ] **Phase 3: Physical & Virtual Memory Management**
+- [ ] **Phase 3: Physical & Virtual Memory Management** *(UP NEXT)*
   - [ ] Physical Frame Allocator (Bitmap Allocator from Limine memory map).
   - [ ] Virtual Memory Paging manager using Limine HHDM.
   - [ ] Kernel Heap Allocator (`linked_list_allocator`) enabling `alloc` (`Box`, `Vec`, `String`).
@@ -190,6 +226,13 @@ ZenoOS/
 │   ├── run.sh
 │   └── test.img
 ├── src/
+│   ├── arch/
+│   │   ├── mod.rs           # Arch module re-export
+│   │   └── x86_64/
+│   │       ├── mod.rs       # x86_64 subsystem re-export
+│   │       ├── apic.rs      # Local APIC/x2APIC, PIC remapping, PIT timer calibration
+│   │       ├── gdt.rs       # 64-bit GDT, TSS, dedicated IST1 double fault stack
+│   │       └── idt.rs       # 256-entry IDT, 32 CPU exception stubs, keyboard IRQ
 │   ├── font.rs              # Embedded 8x8 ASCII glyph bitmap font
 │   ├── limine.rs            # Pure Rust Limine protocol definitions
 │   ├── main.rs              # 64-bit kernel entry point (_start) & panic handler
