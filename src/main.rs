@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 
+mod arch;
 mod font;
 mod limine;
 mod serial;
@@ -10,10 +11,14 @@ mod writer;
 use core::arch::asm;
 use core::fmt::Write;
 use core::panic::PanicInfo;
+use core::sync::atomic::{AtomicU64, Ordering};
 use limine::*;
 use serial::SerialPort;
 use sync::Spinlock;
 use writer::FramebufferConsole;
+
+/// HHDM offset stored early in _start so APIC (and future modules) can read it.
+pub static HHDM_OFFSET: AtomicU64 = AtomicU64::new(0);
 
 // Limine protocol markers and requests
 #[used]
@@ -150,6 +155,39 @@ pub extern "C" fn _start() -> ! {
     kprintln!("[*] System State: 64-bit Long Mode active. Halting CPU idle loop.");
     kprintln!("============================================================");
 
+    // ── Phase 2: Hardware & Interrupt Subsystem ──────────────────────────────
+
+    // Store HHDM offset globally so the APIC module can access it.
+    if let Some(hhdm) = HHDM_REQUEST.response() {
+        HHDM_OFFSET.store(hhdm.offset, Ordering::Relaxed);
+    }
+
+    // 1. Load the Global Descriptor Table (GDT) + TSS.
+    arch::x86_64::gdt::init_gdt();
+
+    // 2. Load the Interrupt Descriptor Table (IDT).
+    arch::x86_64::idt::init_idt();
+
+    // 3. Initialize the Local APIC (masks PIC, enables APIC, programs timer).
+    let hhdm_offset = HHDM_OFFSET.load(Ordering::Relaxed);
+    if hhdm_offset != 0 {
+        arch::x86_64::apic::init_apic(hhdm_offset);
+    } else {
+        serial_println!("[ZenoOS WARN] HHDM offset is 0 — skipping APIC init.");
+    }
+
+    // 4. Enable hardware interrupts.  From this point on the CPU will service
+    //    the APIC timer and PS/2 keyboard IRQs.
+    unsafe { asm!("sti", options(nomem, nostack)) };
+    serial_println!("[ZenoOS] Hardware interrupts ENABLED.  Phase 2 active.");
+    kprintln!("[+] Phase 2: GDT/IDT/APIC active.  Interrupts ENABLED.");
+
+    // ── Trigger a software breakpoint to verify IDT ──────────────────────────
+    // The #BP handler will print a message and return cleanly.
+    unsafe { asm!("int3", options(nomem, nostack)) };
+    kprintln!("[+] #BP test passed — IDT is live.");
+    serial_println!("[ZenoOS] #BP self-test passed.");
+
     hcf();
 }
 
@@ -166,5 +204,38 @@ pub fn hcf() -> ! {
 fn panic(info: &PanicInfo) -> ! {
     serial_println!("\n[KERNEL PANIC] {}", info);
     kprintln!("\n[KERNEL PANIC] {}", info);
+    // ── Phase 2: Hardware & Interrupt Subsystem ──────────────────────────────
+
+    // Store HHDM offset globally so the APIC module can access it.
+    if let Some(hhdm) = HHDM_REQUEST.response() {
+        HHDM_OFFSET.store(hhdm.offset, Ordering::Relaxed);
+    }
+
+    // 1. Load the Global Descriptor Table (GDT) + TSS.
+    arch::x86_64::gdt::init_gdt();
+
+    // 2. Load the Interrupt Descriptor Table (IDT).
+    arch::x86_64::idt::init_idt();
+
+    // 3. Initialize the Local APIC (masks PIC, enables APIC, programs timer).
+    let hhdm_offset = HHDM_OFFSET.load(Ordering::Relaxed);
+    if hhdm_offset != 0 {
+        arch::x86_64::apic::init_apic(hhdm_offset);
+    } else {
+        serial_println!("[ZenoOS WARN] HHDM offset is 0 — skipping APIC init.");
+    }
+
+    // 4. Enable hardware interrupts.  From this point on the CPU will service
+    //    the APIC timer and PS/2 keyboard IRQs.
+    unsafe { asm!("sti", options(nomem, nostack)) };
+    serial_println!("[ZenoOS] Hardware interrupts ENABLED.  Phase 2 active.");
+    kprintln!("[+] Phase 2: GDT/IDT/APIC active.  Interrupts ENABLED.");
+
+    // ── Trigger a software breakpoint to verify IDT ──────────────────────────
+    // The #BP handler will print a message and return cleanly.
+    unsafe { asm!("int3", options(nomem, nostack)) };
+    kprintln!("[+] #BP test passed — IDT is live.");
+    serial_println!("[ZenoOS] #BP self-test passed.");
+
     hcf();
 }

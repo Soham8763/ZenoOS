@@ -49,7 +49,7 @@ iso: build
 	@echo "[+] Successfully built $(ISO)!"
 
 run: iso
-	qemu-system-x86_64 -cdrom $(ISO) -serial stdio -m 512M
+	qemu-system-x86_64 -cpu max -cdrom $(ISO) -serial stdio -m 512M
 
 clean:
 	$(CARGO) clean
